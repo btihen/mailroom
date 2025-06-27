@@ -33,11 +33,7 @@ defmodule YourApp.ImapClient do
 
   def config(_opts) do
     [
-      folder: :inbox,
-      username: "your_username",
-      password: "your_password",
-      server: "imap.example.com",
-      # ... (other necessary options)
+      # ... (other needed options)
       # charset_handler(s) for each email part that resolves expected charsets
       parser_opts: [charset_handler: &handle_charset/2]
     ]
