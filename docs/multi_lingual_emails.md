@@ -55,14 +55,8 @@ defmodule YourApp.ImapClient do
   end
 
   # Your charset handling functions - convert to utf-8 (elixir default)
-  defp handle_charset("windows-1252", string),
-    do: :unicode.characters_to_binary(string, :windows_1252, :utf8)
-
   defp handle_charset("iso-8859-1", string),
     do: :unicode.characters_to_binary(string, :latin1, :utf8)
-
-  defp handle_charset("us-ascii", string),
-    do: :unicode.characters_to_binary(string, :ascii, :utf8)
 
   # UTF-8 strings can pass through unchanged (elixir default)
   defp handle_charset("utf-8", string), do: string
@@ -94,7 +88,7 @@ For unexpected charsets, you have several options:
 
 ```elixir
   # safely replace invalid characters with a placeholder
-  # this approach deals with large binaries quite efficiently
+  # this approach deals with large binaries efficiently
   defp replace_invalid(binary, replacement) do
     replace_invalid(binary, binary, 0, 0, [], replacement)
   end
