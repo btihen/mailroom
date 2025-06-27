@@ -33,13 +33,12 @@ defmodule YourApp.ImapClient do
 
   def config(_opts) do
     [
-      ssl: true,
       folder: :inbox,
       username: "your_username",
       password: "your_password",
       server: "imap.example.com",
-      ssl_opts: [verify: :verify_none],
-      # charset_handler for each email part that specifies a charset
+      # ... (other necessary options)
+      # charset_handler(s) for each email part that resolves expected charsets
       parser_opts: [charset_handler: &handle_charset/2]
     ]
   end
@@ -70,16 +69,12 @@ defmodule YourApp.ImapClient do
 
   # FALLBACK: Handle unexpected charsets
   defp handle_charset(charset_name, string) do
-    if String.valid?(string) do
-      # If the string is valid (utf-8 compliant) then return as is
-      string
-    else
-      Logger.error("Unexpected charset: #{charset_name} with an invalid string")
-      # You can choose to raise an error or attempt a fallback conversion
-      raise "Unexpected charset: #{charset_name} with an invalid string"
-      # Alternatively, you could try a best-effort conversion maybe something like:
-      # sanitize_utf8(string)
-    end
+    Logger.error("Unexpected charset: #{charset_name} with an invalid string")
+    # You can choose to raise an error or attempt a fallback conversion
+    raise "Unexpected charset: #{charset_name} with an invalid string"
+    # Alternatively, you could replace invalid characters with a chosen valid character:
+    # <<0xFFFD::utf8>> `�`, "?", "_", etc. - for example:
+    # replace_invalid(string, <<0xFFFD::utf8>>)
   end
 end
 ```
@@ -98,21 +93,35 @@ For unexpected charsets, you have several options:
 3. **Try sanitizing** - replace invalid characters with a placeholder
 
 ```elixir
-  # something like this might be used to sanitize the string
-  def sanitize_utf8(binary) do
-    binary
-      |> :unicode.characters_to_list(:utf8)
-      |> case do
-           {:error, valid_part, _invalid_part} -> valid_part
-           valid_list when is_list(valid_list) -> valid_list
-         end
-      |> List.to_string()
-    rescue
-      _ -> binary |> :binary.bin_to_list() |> Enum.map(&safe_codepoint/1) |> List.to_string()
-    end
+  # safely replace invalid characters with a placeholder
+  # this approach deals with large binaries quite efficiently
+  defp replace_invalid(binary, replacement) do
+    replace_invalid(binary, binary, 0, 0, [], replacement)
+  end
 
-    defp safe_codepoint(byte) when byte < 128, do: byte
-    defp safe_codepoint(_), do: "?"  # Replace invalid bytes with question mark
+  defp replace_invalid(<<>>, original, offset, len, acc, _replacement) do
+    acc = [acc, binary_part(original, offset, len)]
+    IO.iodata_to_binary(acc)
+  end
+
+  defp replace_invalid(<<char::utf8, rest::binary>>, original, offset, len, acc, replacement) do
+    char_len = byte_size(<<char::utf8>>)
+    replace_invalid(rest, original, offset, len + char_len, acc, replacement)
+  end
+
+  defp replace_invalid(<<_, rest::binary>>, original, offset, len, acc, replacement) do
+    acc = [acc, binary_part(original, offset, len), replacement]
+    replace_invalid(rest, original, offset + len + 1, 0, acc, replacement)
+  end
+```
+
+Usage:
+
+```elixir
+invalid_string = "abcd" <> <<233>> <> "f"
+sanitized_string = replace_invalid(invalid_string, <<0xFFFD::utf8>>)
+# sanitized_string returns:
+"abcd�f"
 ```
 
 ## Handling Common Encodings
