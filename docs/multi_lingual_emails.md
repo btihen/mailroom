@@ -33,8 +33,11 @@ defmodule YourApp.ImapClient do
 
   def config(_opts) do
     [
-      # ... (other needed options)
-      # charset_handler(s) for each email part that resolves expected charsets
+      # necessary options: server, username, password, folder, etc.
+      # ...
+      # charset_handler option: resolves non-utf8 characters for defined charsets
+      # shown are examples for utf-8, iso-8859-1, and handling unexpected charsets
+      # add any additional needed charsets
       parser_opts: [charset_handler: &handle_charset/2]
     ]
   end
@@ -49,11 +52,11 @@ defmodule YourApp.ImapClient do
     # process the email inject the message into your application
   end
 
-  # Your charset handling functions - convert to utf-8 (elixir default)
+  # charset handling for latin-1, converts it to utf-8 (elixir's charset)
   defp handle_charset("iso-8859-1", string),
     do: :unicode.characters_to_binary(string, :latin1, :utf8)
 
-  # UTF-8 strings can pass through unchanged (elixir default)
+  # utf-8 strings can pass through unchanged (elixir's charset)
   defp handle_charset("utf-8", string), do: string
 
   # FALLBACK: Handle unexpected charsets
