@@ -49,7 +49,6 @@ defmodule YourApp.ImapClient do
     process(YourApp.ImapClient, :process_email)
   end
 
-
   def process_email(%Mailroom.Inbox.MessageContext{message: message}) do
     # process the email inject the message into your application
   end
