@@ -1567,6 +1567,7 @@ defmodule Mailroom.IMAPTest do
       ])
       |> TestServer.tagged("IDLE\r\n", [
         "+ idling\r\n",
+        "* OK Still here\r\n",
         "* 2 EXISTS\r\n"
       ])
       |> TestServer.tagged("DONE\r\n", [

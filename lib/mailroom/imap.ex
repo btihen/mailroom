@@ -533,6 +533,10 @@ defmodule Mailroom.IMAP do
         {:noreply,
          %{state | temp: [{String.to_integer(number), parse_fetch_response(data)} | state.temp]}}
 
+      # Ignore OK Still here response during IDLE
+      ["OK" | _rest] ->
+        {:noreply, state}
+
       _ ->
         Logger.warning("Unknown untagged response: #{msg}")
         {:noreply, state}
