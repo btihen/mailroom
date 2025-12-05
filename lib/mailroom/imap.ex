@@ -212,6 +212,39 @@ defmodule Mailroom.IMAP do
   def set_flags(pid, number_or_range, flags, opts \\ []),
     do: GenServer.call(pid, {:set_flags, number_or_range, flags, opts}) && pid
 
+  @doc """
+  Remove flags from messages using UIDs instead of sequence numbers.
+
+  ## Examples:
+
+      > IMAP.uid_remove_flags(client, 268, [:seen])
+      > IMAP.uid_remove_flags(client, 268..270, [:seen, :flagged])
+  """
+  def uid_remove_flags(pid, uid_or_range, flags, opts \\ []),
+    do: GenServer.call(pid, {:uid_remove_flags, uid_or_range, flags, opts}) && pid
+
+  @doc """
+  Add flags to messages using UIDs instead of sequence numbers.
+
+  ## Examples:
+
+      > IMAP.uid_add_flags(client, 268, [:deleted])
+      > IMAP.uid_add_flags(client, 268..270, [:seen, :flagged])
+  """
+  def uid_add_flags(pid, uid_or_range, flags, opts \\ []),
+    do: GenServer.call(pid, {:uid_add_flags, uid_or_range, flags, opts}) && pid
+
+  @doc """
+  Set flags on messages using UIDs instead of sequence numbers.
+
+  ## Examples:
+
+      > IMAP.uid_set_flags(client, 268, [:seen])
+      > IMAP.uid_set_flags(client, 268..270, [:seen, :flagged])
+  """
+  def uid_set_flags(pid, uid_or_range, flags, opts \\ []),
+    do: GenServer.call(pid, {:uid_set_flags, uid_or_range, flags, opts}) && pid
+
   def copy(pid, sequence, mailbox_name),
     do: GenServer.call(pid, {:copy, sequence, mailbox_name}) && pid
 
@@ -354,6 +387,28 @@ defmodule Mailroom.IMAP do
            "STORE",
            " ",
            to_sequence(sequence),
+           " ",
+           unquote(command),
+           store_silent(opts),
+           " ",
+           flags_to_list(flags)
+         ],
+         %{state | temp: []}
+       )}
+    end
+  end)
+
+  # UID-based flag operations (use UID STORE instead of STORE)
+  [uid_remove_flags: "-FLAGS", uid_add_flags: "+FLAGS", uid_set_flags: "FLAGS"]
+  |> Enum.each(fn {func_name, command} ->
+    def handle_call({unquote(func_name), uid, flags, opts}, from, state) do
+      {:noreply,
+       send_command(
+         from,
+         [
+           "UID STORE",
+           " ",
+           to_sequence(uid),
            " ",
            unquote(command),
            store_silent(opts),
@@ -774,6 +829,14 @@ defmodule Mailroom.IMAP do
   defp process_command_response(
          cmd_tag,
          %{command: "STORE", caller: caller},
+         _msg,
+         %{temp: temp} = state
+       ),
+       do: send_reply(caller, Enum.reverse(temp), remove_command_from_state(state, cmd_tag))
+
+  defp process_command_response(
+         cmd_tag,
+         %{command: "UID STORE", caller: caller},
          _msg,
          %{temp: temp} = state
        ),

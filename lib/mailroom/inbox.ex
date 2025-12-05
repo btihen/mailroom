@@ -10,7 +10,14 @@ defmodule Mailroom.Inbox do
   end
 
   defmodule MessageContext do
+    @moduledoc """
+    Context passed to email processing callbacks.
+
+    - `id` - The message sequence number (for backwards compatibility)
+    - `uid` - The IMAP UID (unique identifier, stable across sessions)
+    """
     defstruct id: nil,
+              uid: nil,
               type: :imap,
               mail_info: nil,
               mail: nil,
@@ -39,6 +46,7 @@ defmodule Mailroom.Inbox do
       alias Mailroom.IMAP
 
       @matches []
+      @fetch_uid Keyword.get(unquote(opts), :fetch_uid, false)
       @before_compile unquote(__MODULE__)
 
       def init(args) do
@@ -181,9 +189,13 @@ defmodule Mailroom.Inbox do
         {:{}, [], [patterns, module, function, fetch_mail]}
       end)
 
-    fetch_items_required = [
-      :envelope
-      | env.module
+    fetch_uid = Module.get_attribute(env.module, :fetch_uid, false)
+
+    fetch_items_required =
+      [:envelope]
+      |> then(fn items -> if fetch_uid, do: [:uid | items], else: items end)
+      |> Kernel.++(
+        env.module
         |> Module.get_attribute(:matches)
         |> Enum.flat_map(fn %{patterns: patterns} -> patterns end)
         |> Enum.flat_map(fn
@@ -192,7 +204,7 @@ defmodule Mailroom.Inbox do
           _ -> []
         end)
         |> Enum.uniq()
-    ]
+      )
 
     quote location: :keep do
       defp process_mailbox(client, %{assigns: assigns, opts: opts}) do
@@ -275,8 +287,12 @@ defmodule Mailroom.Inbox do
               {mail, message} =
                 if fetch_mail, do: fetch_mail(client, msg_id, opts), else: {nil, nil}
 
+              # Extract UID from mail_info (set by generate_mail_info)
+              uid = Map.get(mail_info, :uid)
+
               context = %MessageContext{
                 id: msg_id,
+                uid: uid,
                 mail_info: mail_info,
                 mail: mail,
                 message: message,

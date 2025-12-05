@@ -109,6 +109,9 @@ defmodule Mailroom.Inbox.MatchUtils do
     {_, subject} =
       Mail.Parsers.RFC2822.parse_header("Subject: #{subject}", parser_opts)
 
+    # Extract UID from response if available
+    uid = Map.get(response, :uid)
+
     %{
       recipients: recipients,
       to: to,
@@ -118,7 +121,8 @@ defmodule Mailroom.Inbox.MatchUtils do
       reply_to: get_email_addresses(reply_to),
       subject: subject,
       has_attachment: has_attachment,
-      headers: headers
+      headers: headers,
+      uid: uid
     }
   end
 

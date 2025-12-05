@@ -604,4 +604,101 @@ defmodule Mailroom.InboxTest do
 
     assert log =~ "Connection failed: :unable_to_connect"
   end
+
+  # Test module with fetch_uid: true option
+  defmodule TestMailProcessorWithUid do
+    def match_with_uid(%{id: msg_id, uid: uid, assigns: %{test_pid: pid}}) do
+      send(pid, {:matched_with_uid, msg_id, uid})
+      :delete
+    end
+  end
+
+  defmodule TestMailRouterWithUid do
+    use Mailroom.Inbox, fetch_uid: true
+
+    def config(opts) do
+      Keyword.merge(opts, username: "test@example.com", password: "P@55w0rD")
+    end
+
+    match do
+      subject(~r/test/i)
+
+      process(TestMailProcessorWithUid, :match_with_uid)
+    end
+
+    def match_to(%{id: msg_id, uid: uid, assigns: %{test_pid: pid}}) do
+      send(pid, {:matched_to_with_uid, msg_id, uid})
+      :delete
+    end
+  end
+
+  test "fetch_uid option includes UID in MessageContext" do
+    server = TestServer.start(ssl: true)
+
+    TestServer.expect(server, fn expectations ->
+      expectations
+      |> TestServer.tagged(:connect, "* OK IMAP ready\r\n")
+      |> TestServer.tagged("LOGIN \"test@example.com\" \"P@55w0rD\"\r\n", [
+        "* CAPABILITY (IMAPrev4)\r\n",
+        "OK test@example.com authenticated (Success)\r\n"
+      ])
+      |> TestServer.tagged("SELECT INBOX\r\n", [
+        "* FLAGS (\\Flagged \\Draft \\Deleted \\Seen)\r\n",
+        "* OK [PERMANENTFLAGS (\\Flagged \\Draft \\Deleted \\Seen \\*)] Flags permitted\r\n",
+        "* 0 EXISTS\r\n",
+        "* 0 RECENT\r\n",
+        "OK [READ-WRITE] INBOX selected. (Success)\r\n"
+      ])
+      |> TestServer.tagged("IDLE\r\n", [
+        "+ idling\r\n",
+        "* 1 EXISTS\r\n"
+      ])
+      |> TestServer.tagged("DONE\r\n", [
+        "OK IDLE terminated\r\n"
+      ])
+      |> TestServer.tagged("SEARCH UNSEEN\r\n", [
+        "* SEARCH 1\r\n",
+        "OK Success\r\n"
+      ])
+      # Note: FETCH includes UID because fetch_uid: true (UID comes first)
+      |> TestServer.tagged("FETCH 1 (UID ENVELOPE)\r\n", [
+        "* 1 FETCH (UID 42 ENVELOPE (\"Wed, 26 Oct 2016 14:23:14 +0200\" \"Test email\" ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"John Doe\" NIL \"john\" \"example.com\")) NIL NIL NIL \"<B042B704-E13E-44A2-8FEC-67A43B6DD6DB@example.com>\"))\r\n",
+        "OK Success\r\n"
+      ])
+      |> TestServer.tagged("STORE 1 +FLAGS (\\Deleted)\r\n", [
+        "* 1 FETCH (FLAGS (\\Deleted))\r\n",
+        "OK Store completed\r\n"
+      ])
+      |> TestServer.tagged("EXPUNGE\r\n", [
+        "* 1 EXPUNGE\r\n",
+        "OK Expunge completed\r\n"
+      ])
+      |> TestServer.tagged("IDLE\r\n", [
+        "+ idling\r\n"
+      ])
+      |> TestServer.tagged("DONE\r\n", [
+        "OK IDLE terminated\r\n"
+      ])
+      |> TestServer.tagged("LOGOUT\r\n", [
+        "* BYE We're out of here\r\n",
+        "OK Logged out\r\n"
+      ])
+    end)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      {:ok, pid} =
+        TestMailRouterWithUid.start_link(
+          server: server.address,
+          port: server.port,
+          ssl: true,
+          ssl_opts: [verify: :verify_none],
+          assigns: %{test_pid: self()},
+          debug: @debug
+        )
+
+      # msg_id is 1 (sequence number), uid is 42 (IMAP UID)
+      assert_receive({:matched_with_uid, 1, 42})
+      TestMailRouterWithUid.close(pid)
+    end)
+  end
 end
