@@ -113,7 +113,18 @@ defmodule Mailroom.IMAP do
     end
   end
 
-  def mode(pid, mode),
+  @doc """
+  Set the mode of the IMAP connection
+
+  The following modes are available:
+
+    - `:normal` - default, the mode is not set
+    - `:uid` - the mode is set to UID
+
+  In normal mode, messages numbers are used to identify messages.
+  In UID mode, message UIDs are used to identify messages and the UID command used as a prefix to other commands.
+  """
+  def mode(pid, mode) when mode in [:normal, :uid],
     do: GenServer.call(pid, {:mode, mode}) && pid
 
   def select(pid, mailbox_name),
