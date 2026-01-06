@@ -17,6 +17,7 @@ defmodule Mailroom.IMAP do
               capability: [],
               flags: [],
               permanent_flags: [],
+              mode: :normal,
               uid_validity: nil,
               uid_next: nil,
               unseen: 0,
@@ -112,6 +113,9 @@ defmodule Mailroom.IMAP do
     end
   end
 
+  def mode(pid, mode),
+    do: GenServer.call(pid, {:mode, mode}) && pid
+
   def select(pid, mailbox_name),
     do: GenServer.call(pid, {:select, mailbox_name}) && pid
 
@@ -150,14 +154,6 @@ defmodule Mailroom.IMAP do
     end
   end
 
-  def uid_fetch(pid, number_or_range, items_list, opts \\ []) do
-    GenServer.call(
-      pid,
-      {:uid_fetch, number_or_range, items_list},
-      Keyword.get(opts, :timeout, 300_000)
-    )
-  end
-
   def search(pid, query, items_list \\ nil, func \\ nil) do
     {:ok, list} = GenServer.call(pid, {:search, query}, 60_000)
 
@@ -173,10 +169,6 @@ defmodule Mailroom.IMAP do
     else
       {:ok, list}
     end
-  end
-
-  def uid_search(pid, query) do
-    GenServer.call(pid, {:uid_search, query}, 60_000)
   end
 
   def each(pid, items_list \\ [:envelope], func) do
@@ -211,39 +203,6 @@ defmodule Mailroom.IMAP do
 
   def set_flags(pid, number_or_range, flags, opts \\ []),
     do: GenServer.call(pid, {:set_flags, number_or_range, flags, opts}) && pid
-
-  @doc """
-  Remove flags from messages using UIDs instead of sequence numbers.
-
-  ## Examples:
-
-      > IMAP.uid_remove_flags(client, 268, [:seen])
-      > IMAP.uid_remove_flags(client, 268..270, [:seen, :flagged])
-  """
-  def uid_remove_flags(pid, uid_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:uid_remove_flags, uid_or_range, flags, opts}) && pid
-
-  @doc """
-  Add flags to messages using UIDs instead of sequence numbers.
-
-  ## Examples:
-
-      > IMAP.uid_add_flags(client, 268, [:deleted])
-      > IMAP.uid_add_flags(client, 268..270, [:seen, :flagged])
-  """
-  def uid_add_flags(pid, uid_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:uid_add_flags, uid_or_range, flags, opts}) && pid
-
-  @doc """
-  Set flags on messages using UIDs instead of sequence numbers.
-
-  ## Examples:
-
-      > IMAP.uid_set_flags(client, 268, [:seen])
-      > IMAP.uid_set_flags(client, 268..270, [:seen, :flagged])
-  """
-  def uid_set_flags(pid, uid_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:uid_set_flags, uid_or_range, flags, opts}) && pid
 
   def copy(pid, sequence, mailbox_name),
     do: GenServer.call(pid, {:copy, sequence, mailbox_name}) && pid
@@ -325,6 +284,9 @@ defmodule Mailroom.IMAP do
     end
   end
 
+  def handle_call({:mode, mode}, _from, state),
+    do: {:reply, mode, %{state | mode: mode}}
+
   def handle_call({:select, :inbox}, from, state),
     do: handle_call({:select, "INBOX"}, from, state)
 
@@ -363,19 +325,8 @@ defmodule Mailroom.IMAP do
      })}
   end
 
-  def handle_call({:uid_fetch, sequence, items}, from, state) do
-    {:noreply,
-     send_command(from, ["UID FETCH", " ", to_sequence(sequence), " ", items_to_list(items)], %{
-       state
-       | temp: []
-     })}
-  end
-
   def handle_call({:search, query}, from, state),
     do: {:noreply, send_command(from, ["SEARCH", " ", query], %{state | temp: []})}
-
-  def handle_call({:uid_search, query}, from, state),
-    do: {:noreply, send_command(from, ["UID SEARCH", " ", query], %{state | temp: []})}
 
   [remove_flags: "-FLAGS", add_flags: "+FLAGS", set_flags: "FLAGS"]
   |> Enum.each(fn {func_name, command} ->
@@ -387,28 +338,6 @@ defmodule Mailroom.IMAP do
            "STORE",
            " ",
            to_sequence(sequence),
-           " ",
-           unquote(command),
-           store_silent(opts),
-           " ",
-           flags_to_list(flags)
-         ],
-         %{state | temp: []}
-       )}
-    end
-  end)
-
-  # UID-based flag operations (use UID STORE instead of STORE)
-  [uid_remove_flags: "-FLAGS", uid_add_flags: "+FLAGS", uid_set_flags: "FLAGS"]
-  |> Enum.each(fn {func_name, command} ->
-    def handle_call({unquote(func_name), uid, flags, opts}, from, state) do
-      {:noreply,
-       send_command(
-         from,
-         [
-           "UID STORE",
-           " ",
-           to_sequence(uid),
            " ",
            unquote(command),
            store_silent(opts),
@@ -698,6 +627,15 @@ defmodule Mailroom.IMAP do
 
   defp process_command_response(
          cmd_tag,
+         %{command: <<"UID ", command::binary>>, caller: caller},
+         msg,
+         %{mode: :uid} = state
+       ) do
+    process_command_response(cmd_tag, %{command: command, caller: caller}, msg, state)
+  end
+
+  defp process_command_response(
+         cmd_tag,
          %{command: "STARTTLS", caller: caller},
          _msg,
          %{socket: socket, cmd_map: cmd_map, temp: %{username: username, password: password}} =
@@ -909,11 +847,13 @@ defmodule Mailroom.IMAP do
 
   defp send_command(
          caller,
-         command,
-         %{socket: socket, cmd_number: cmd_number, cmd_map: cmd_map} = state
+         message,
+         %{socket: socket, cmd_number: cmd_number, cmd_map: cmd_map, mode: mode} = state
        ) do
     cmd_tag = "A#{String.pad_leading(Integer.to_string(cmd_number), 3, "0")}"
-    :ok = Socket.send(socket, [cmd_tag, " ", command, "\r\n"])
+    command = hd(List.wrap(message))
+    message = uid_command(message, mode)
+    :ok = Socket.send(socket, [cmd_tag, " ", message, "\r\n"])
 
     %{
       state
@@ -921,6 +861,12 @@ defmodule Mailroom.IMAP do
         cmd_map: Map.put_new(cmd_map, cmd_tag, %{command: hd(List.wrap(command)), caller: caller})
     }
   end
+
+  defp uid_command([command | _] = message, :uid) when command in ["FETCH", "SEARCH", "STORE"] do
+    ["UID " | message]
+  end
+
+  defp uid_command(message, _mode), do: message
 
   defp increment_command_number(999), do: 1
   defp increment_command_number(number), do: number + 1

@@ -46,7 +46,6 @@ defmodule Mailroom.Inbox do
       alias Mailroom.IMAP
 
       @matches []
-      @fetch_uid Keyword.get(unquote(opts), :fetch_uid, false)
       @before_compile unquote(__MODULE__)
 
       def init(args) do
@@ -189,11 +188,8 @@ defmodule Mailroom.Inbox do
         {:{}, [], [patterns, module, function, fetch_mail]}
       end)
 
-    fetch_uid = Module.get_attribute(env.module, :fetch_uid, false)
-
     fetch_items_required =
-      [:envelope]
-      |> then(fn items -> if fetch_uid, do: [:uid | items], else: items end)
+      [:uid, :envelope]
       |> Kernel.++(
         env.module
         |> Module.get_attribute(:matches)

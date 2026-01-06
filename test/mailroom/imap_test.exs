@@ -386,7 +386,8 @@ defmodule Mailroom.IMAPTest do
     {:ok, msgs} =
       client
       |> IMAP.select(:inbox)
-      |> IMAP.uid_fetch(1, :uid)
+      |> IMAP.mode(:uid)
+      |> IMAP.fetch(1, :uid)
 
     assert msgs == [{1, %{uid: 46}}]
     IMAP.logout(client)
@@ -467,8 +468,9 @@ defmodule Mailroom.IMAPTest do
 
     {:ok, msgs} =
       client
+      |> IMAP.mode(:uid)
       |> IMAP.select(:inbox)
-      |> IMAP.uid_search("UNSEEN")
+      |> IMAP.search("UNSEEN")
 
     assert msgs == [1, 2, 4, 6, 7]
     IMAP.logout(client)
@@ -1426,7 +1428,9 @@ defmodule Mailroom.IMAPTest do
         "* 1 FETCH (FLAGS (\\Answered))\r\n",
         "OK Success\r\n"
       ])
-      |> TestServer.tagged("STORE 1:2 FLAGS.SILENT (\\Deleted)\r\n", ["OK Success\r\n"])
+      |> TestServer.tagged("STORE 1:2 FLAGS.SILENT (\\Deleted)\r\n", [
+        "OK Success\r\n"
+      ])
       |> TestServer.tagged("LOGOUT\r\n", [
         "* BYE We're out of here\r\n",
         "OK Logged out\r\n"
@@ -1475,7 +1479,9 @@ defmodule Mailroom.IMAPTest do
         "* 2 FETCH (UID 101 FLAGS (\\Answered))\r\n",
         "OK Success\r\n"
       ])
-      |> TestServer.tagged("UID STORE 100:101 FLAGS.SILENT (\\Deleted)\r\n", ["OK Success\r\n"])
+      |> TestServer.tagged("UID STORE 100:101 FLAGS.SILENT (\\Deleted)\r\n", [
+        "OK Success\r\n"
+      ])
       |> TestServer.tagged("LOGOUT\r\n", [
         "* BYE We're out of here\r\n",
         "OK Logged out\r\n"
@@ -1492,9 +1498,10 @@ defmodule Mailroom.IMAPTest do
 
     client
     |> IMAP.select(:inbox)
-    |> IMAP.uid_remove_flags(100, [:seen])
-    |> IMAP.uid_add_flags(101, [:answered])
-    |> IMAP.uid_set_flags(100..101, [:deleted], silent: true)
+    |> IMAP.mode(:uid)
+    |> IMAP.remove_flags(100, [:seen])
+    |> IMAP.add_flags(101, [:answered])
+    |> IMAP.set_flags(100..101, [:deleted], silent: true)
 
     IMAP.logout(client)
   end
