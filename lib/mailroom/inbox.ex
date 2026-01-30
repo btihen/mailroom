@@ -89,7 +89,8 @@ defmodule Mailroom.Inbox do
       end
 
       def handle_info({:ssl_closed, _}, state) do
-        handle_continue(:after_init, state)
+        Logger.warning("SSL connection closed, reconnecting...")
+        handle_continue(:after_init, %{state | client: nil})
       end
 
       def handle_continue(:after_init, %{opts: opts} = state) do

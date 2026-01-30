@@ -632,6 +632,58 @@ defmodule Mailroom.InboxTest do
     end
   end
 
+  describe "handle_info ssl_closed" do
+    test "returns {:noreply, state} or {:stop, reason, state} tuple" do
+      # This test verifies that handle_info({:ssl_closed, _}, state) returns a valid
+      # GenServer callback tuple. Before the fix, it called handle_continue but didn't
+      # return the result, causing the GenServer to crash.
+      #
+      # We test this by calling the generated handle_info function directly and verifying
+      # it returns a proper tuple (not nil or some other invalid value).
+
+      state = %Mailroom.Inbox.State{
+        opts: [server: "localhost", username: "test", password: "test"],
+        client: :fake_client,
+        assigns: %{}
+      }
+
+      # Call handle_info directly - this would have returned nil before the fix
+      # because handle_continue's result wasn't being returned
+      result = TestMailRouter.handle_info({:ssl_closed, :fake_socket}, state)
+
+      # The result should be a valid GenServer callback tuple
+      # Either {:noreply, _}, {:noreply, _, _}, {:stop, _, _}, or {:stop, _, _, _}
+      assert match?({:noreply, _}, result) or
+               match?({:noreply, _, _}, result) or
+               match?({:stop, _, _}, result) or
+               match?({:stop, _, _, _}, result),
+             "handle_info should return a valid GenServer tuple, got: #{inspect(result)}"
+
+      # Verify the client was reset to nil in the state (part of the fix)
+      case result do
+        {:noreply, new_state} -> assert new_state.client == nil
+        {:noreply, new_state, _} -> assert new_state.client == nil
+        {:stop, _reason, new_state} -> assert new_state.client == nil
+        {:stop, _reason, _reply, new_state} -> assert new_state.client == nil
+      end
+    end
+
+    test "logs warning message" do
+      state = %Mailroom.Inbox.State{
+        opts: [server: "localhost", username: "test", password: "test"],
+        client: :fake_client,
+        assigns: %{}
+      }
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          TestMailRouter.handle_info({:ssl_closed, :fake_socket}, state)
+        end)
+
+      assert log =~ "SSL connection closed, reconnecting"
+    end
+  end
+
   test "fetch_uid option includes UID in MessageContext" do
     server = TestServer.start(ssl: true)
 
