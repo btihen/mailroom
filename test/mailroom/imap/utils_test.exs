@@ -46,6 +46,42 @@ defmodule Mailroom.IMAP.UtilsTest do
       assert parse_list("(one two) three") == {["one", "two"], " three"}
       assert parse_list("(one two)\r\n") == {["one", "two"], "\r\n"}
     end
+
+    test "with literal string containing full content" do
+      # Literal with all bytes present inline
+      assert parse_list("(name {5}\r\nhello rest)") == {["name", "hello", "rest"], ""}
+    end
+
+    test "with literal string in nested ENVELOPE structure" do
+      # Simulates a complete IMAP ENVELOPE sender field with literal display name
+      # e.g. ENVELOPE ("date" "subject" (("Display Name" NIL "user" "example.com")) ...)
+      # When the display name contains special chars, the server may use a literal:
+      # (({23}\r\nJohn  Doe - Company Inc NIL "user" "example.com"))
+      # The literal content is exactly 23 bytes: "John  Doe - Company Inc"
+      envelope_sender = "(({23}\r\nJohn  Doe - Company Inc NIL \"user\" \"example.com\"))"
+      {result, _rest} = parse_list(envelope_sender)
+      assert result == [["John  Doe - Company Inc", nil, "user", "example.com"]]
+    end
+
+    test "with literal string where content is truncated (incomplete data)" do
+      # This reproduces the production crash: the IMAP server sends {23}\r\n
+      # but the literal content hasn't arrived yet (split across network packets).
+      # parse_list receives only the header part without the 23 bytes of content.
+      incomplete_data = "(({23}\r\n"
+
+      # The parser should handle this gracefully instead of crashing.
+      # Expected: return an error tuple indicating incomplete data.
+      assert {:error, :incomplete_literal, bytes_needed: 23, bytes_available: 0} =
+               parse_list(incomplete_data)
+    end
+
+    test "with literal string where content is partially present" do
+      # Only 10 of the 23 expected bytes are present
+      partial_data = "(({23}\r\nJohn  Doe "
+
+      assert {:error, :incomplete_literal, bytes_needed: 23, bytes_available: 10} =
+               parse_list(partial_data)
+    end
   end
 
   test "parse_list_only/1" do
