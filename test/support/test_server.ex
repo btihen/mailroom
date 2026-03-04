@@ -202,10 +202,13 @@ defmodule Mailroom.TestServer do
   defp get_port({:sslsocket, _, {socket, _}}),
     do: get_port(socket)
 
+  defp get_port(socket) when elem(socket, 0) == :sslsocket,
+    do: get_port(elem(socket, 1))
+
   defp get_port(socket),
     do: :inet.port(socket)
 
-  defp accept_connection({:sslsocket, _, _} = socket) do
+  defp accept_connection(socket) when elem(socket, 0) == :sslsocket do
     {:ok, socket} = :ssl.transport_accept(socket)
 
     handshake(socket, 1_000)
@@ -214,13 +217,13 @@ defmodule Mailroom.TestServer do
   defp accept_connection(socket),
     do: :gen_tcp.accept(socket, 1_000)
 
-  defp socket_send({:sslsocket, _, _} = socket, data),
+  defp socket_send(socket, data) when elem(socket, 0) == :sslsocket,
     do: :ssl.send(socket, data)
 
   defp socket_send(socket, data),
     do: :gen_tcp.send(socket, data)
 
-  defp socket_recv({:sslsocket, _, _} = socket),
+  defp socket_recv(socket) when elem(socket, 0) == :sslsocket,
     do: :ssl.recv(socket, 0, 1_000)
 
   defp socket_recv(socket),
