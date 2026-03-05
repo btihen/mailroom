@@ -71,7 +71,7 @@ defmodule Mailroom.IMAP.UtilsTest do
 
       # The parser should handle this gracefully instead of crashing.
       # Expected: return an error tuple indicating incomplete data.
-      assert {:error, :incomplete_literal, bytes_needed: 23, bytes_available: 0} =
+      assert {:error, {:incomplete_literal, bytes_needed: 23, bytes_available: 0}} =
                parse_list(incomplete_data)
     end
 
@@ -79,7 +79,7 @@ defmodule Mailroom.IMAP.UtilsTest do
       # Only 10 of the 23 expected bytes are present
       partial_data = "(({23}\r\nJohn  Doe "
 
-      assert {:error, :incomplete_literal, bytes_needed: 23, bytes_available: 10} =
+      assert {:error, {:incomplete_literal, bytes_needed: 23, bytes_available: 10}} =
                parse_list(partial_data)
     end
   end

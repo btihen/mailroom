@@ -2,7 +2,7 @@ defmodule Mailroom.IMAP.Utils do
   @moduledoc false
   def parse_list_only(string) do
     case parse_list(string) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       {list, _rest} -> list
     end
   end
@@ -11,7 +11,7 @@ defmodule Mailroom.IMAP.Utils do
 
   def parse_list(<<"(", rest::binary>>, depth, _temp, acc) do
     case parse_list(rest, depth + 1, nil, []) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       {list, rest} ->
         acc = if acc, do: [list | acc], else: list
 
@@ -29,7 +29,7 @@ defmodule Mailroom.IMAP.Utils do
   def parse_list(<<"\"", _rest::binary>> = string, depth, _temp, acc) do
     {string, rest} = parse_string(string)
     case parse_list(rest, depth, string, acc) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
@@ -42,43 +42,41 @@ defmodule Mailroom.IMAP.Utils do
       <<string::binary-size(octets), rest::binary>> = rest
       parse_list(rest, depth, nil, prepend_to_list(acc, string))
     else
-      {:error, :incomplete_literal,
-       bytes_needed: octets,
-       bytes_available: byte_size(rest)}
+      {:error, {:incomplete_literal, bytes_needed: octets, bytes_available: byte_size(rest)}}
     end
   end
 
   def parse_list(<<" ", rest::binary>>, depth, nil, acc) do
     case parse_list(rest, depth, nil, acc) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
 
   def parse_list(<<"\r", rest::binary>>, depth, temp, acc) do
     case parse_list(rest, depth, "\r", prepend_to_list(acc, temp)) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
 
   def parse_list(<<" ", rest::binary>>, depth, temp, acc) do
     case parse_list(rest, depth, nil, prepend_to_list(acc, temp)) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
 
   def parse_list(<<char::utf8, rest::binary>>, depth, nil, acc) do
     case parse_list(rest, depth, <<char>>, acc) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
 
   def parse_list(<<char::utf8, rest::binary>>, depth, temp, acc) do
     case parse_list(rest, depth, <<temp::binary, char>>, acc) do
-      {:error, _, _} = error -> error
+      {:error, _} = error -> error
       result -> result
     end
   end
