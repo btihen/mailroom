@@ -70,17 +70,30 @@ defmodule Mailroom.IMAP.UtilsTest do
       incomplete_data = "(({23}\r\n"
 
       # The parser should handle this gracefully instead of crashing.
-      # Expected: return an error tuple indicating incomplete data.
-      assert {:error, {:incomplete_literal, bytes_needed: 23, bytes_available: 0}} =
-               parse_list(incomplete_data)
+      # Expected: return partial data and log a warning.
+      import ExUnit.CaptureLog
+
+      log =
+        capture_log(fn ->
+          assert {[[]], ""} = parse_list(incomplete_data)
+        end)
+
+      assert log =~ "parse_list: expected string of size 23"
     end
 
     test "with literal string where content is partially present" do
       # Only 10 of the 23 expected bytes are present
+      # The parser returns the accumulated list and continues parsing the rest as tokens
       partial_data = "(({23}\r\nJohn  Doe "
 
-      assert {:error, {:incomplete_literal, bytes_needed: 23, bytes_available: 10}} =
-               parse_list(partial_data)
+      import ExUnit.CaptureLog
+
+      log =
+        capture_log(fn ->
+          assert {[[], "John", "Doe"], ""} = parse_list(partial_data)
+        end)
+
+      assert log =~ "parse_list: expected string of size 23"
     end
   end
 
